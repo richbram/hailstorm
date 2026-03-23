@@ -1,0 +1,114 @@
+# =============================================================================
+# Hailstorm — Cloud Run Service Definition
+#
+# Deploy with:
+#   gcloud run services replace deploy/cloudrun/service.yaml \
+#     --region=us-central1
+#
+# Or let Cloud Build manage deployment via cloudbuild.yaml.
+#
+# NOTE: Replace all <PLACEHOLDER> values before deploying.
+# =============================================================================
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: hailstorm-dev
+  labels:
+    app: hailstorm
+    environment: dev
+  annotations:
+    # Allow Cloud Build to update this service
+    run.googleapis.com/ingress: internal-and-cloud-load-balancing
+spec:
+  template:
+    metadata:
+      annotations:
+        # ---------------------------------------------------------------------------
+        # Scaling — start from 0 for dev; set min-instances=1 for production
+        # to avoid cold-start latency (Elasticsearch takes ~60s to warm up).
+        # ---------------------------------------------------------------------------
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "3"
+
+        # ---------------------------------------------------------------------------
+        # CPU — always allocated so Elasticsearch stays warm between requests
+        # ---------------------------------------------------------------------------
+        run.googleapis.com/cpu-throttling: "false"
+
+        # ---------------------------------------------------------------------------
+        # Startup probe — Snowstorm takes 2-3 minutes to start after ES is up
+        # ---------------------------------------------------------------------------
+        run.googleapis.com/startup-cpu-boost: "true"
+
+    spec:
+      # Service account with least-privilege IAM roles
+      serviceAccountName: hailstorm-sa@<PROJECT_ID>.iam.gserviceaccount.com
+
+      # Maximum request timeout (Cloud Run max is 3600s)
+      timeoutSeconds: 3600
+
+      containers:
+        - name: hailstorm
+          # Replace with your Artifact Registry image path after first build
+          image: us-central1-docker.pkg.dev/<PROJECT_ID>/hailstorm/snowstorm:latest
+
+          ports:
+            - name: http1
+              containerPort: 8080
+
+          resources:
+            limits:
+              # Minimum 8Gi required: 2Gi ES + 4Gi Snowstorm + 2Gi OS/cache
+              memory: 8Gi
+              cpu: "4"
+
+          env:
+            # Cloud Run injects PORT automatically; Snowstorm reads it via entrypoint
+            - name: PORT
+              value: "8080"
+
+            # Set to "true" after initial SNOMED CT data load is complete
+            - name: SNOWSTORM_READONLY
+              value: "false"
+
+            # JVM heap for Snowstorm (Elasticsearch heap is set in jvm.options.d)
+            - name: SNOWSTORM_JVM_OPTS
+              value: "-Xms2g -Xmx4g --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED"
+
+            # Optional: extra Spring Boot args (e.g. --spring.profiles.active=dev)
+            - name: SNOWSTORM_EXTRA_ARGS
+              value: ""
+
+          # ---------------------------------------------------------------------------
+          # Startup probe — allow up to 10 minutes for Snowstorm to initialise
+          # ---------------------------------------------------------------------------
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 40   # 40 × 15s = 600s = 10 minutes
+
+          # ---------------------------------------------------------------------------
+          # Liveness probe — restart container if Snowstorm becomes unresponsive
+          # ---------------------------------------------------------------------------
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            failureThreshold: 3
+
+          # ---------------------------------------------------------------------------
+          # Readiness probe — stop sending traffic if not ready
+          # ---------------------------------------------------------------------------
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 120
+            periodSeconds: 15
+            failureThreshold: 5

@@ -1,0 +1,40 @@
+# =============================================================================
+# Hailstorm — .dockerignore
+# =============================================================================
+
+# Git
+.git
+.gitignore
+
+# Documentation
+docs/
+*.md
+README*
+
+# Local dev
+docker/
+.env
+.env.*
+
+# CI/CD (not needed in image)
+deploy/
+
+# Scripts (copied selectively in Dockerfile)
+# scripts/ — DO NOT ignore; entrypoint.sh is COPY'd in Dockerfile
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# macOS
+.DS_Store
+
+# Test artefacts
+*.test
+test/
+tests/
+
+# Temporary files
+*.tmp
+*.log

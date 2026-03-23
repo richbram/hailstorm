@@ -1,0 +1,41 @@
+# =============================================================================
+# Hailstorm — .gitignore
+# =============================================================================
+
+# Environment / secrets — NEVER commit these
+.env
+.env.*
+*.key
+*.pem
+secrets/
+
+# Data directories (SNOMED CT RF2 files are large — store in GCS, not git)
+data/
+*.zip
+*.tar.gz
+
+# Elasticsearch data
+elasticsearch-data/
+
+# Java
+*.class
+*.jar
+*.war
+target/
+
+# Logs
+*.log
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+
+# macOS
+.DS_Store
+__MACOSX/
+
+# Node (for any future tooling)
+node_modules/

@@ -1,0 +1,114 @@
+# =============================================================================
+# Hailstorm — Local Development Docker Compose
+#
+# Mirrors the production Cloud Run architecture locally:
+#   - Elasticsearch (standalone, for local dev only)
+#   - Snowstorm (connected to local ES)
+#
+# Usage:
+#   docker compose -f docker/docker-compose.yml up
+#
+# After services are up, load SNOMED CT:
+#   export SNOWSTORM_URL=http://localhost:8080
+#   export RF2_FILE=/path/to/SnomedCT_RF2.zip
+#   bash scripts/load-snomed.sh
+#
+# Swagger UI (Snowstorm native API):
+#   http://localhost:8080/swagger-ui.html
+#
+# FHIR API base:
+#   http://localhost:8080/fhir
+# =============================================================================
+
+version: "3.8"
+
+services:
+  # ---------------------------------------------------------------------------
+  # Elasticsearch
+  # ---------------------------------------------------------------------------
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
+    container_name: hailstorm-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - node.name=snowstorm
+      - cluster.name=snowstorm-cluster
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - "127.0.0.1:9200:9200"
+    networks:
+      - hailstorm
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health?wait_for_status=yellow || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # Snowstorm
+  # ---------------------------------------------------------------------------
+  snowstorm:
+    image: snomedinternational/snowstorm:10.10.1
+    container_name: hailstorm-snowstorm
+    restart: unless-stopped
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    entrypoint:
+      - java
+      - -Xms2g
+      - -Xmx4g
+      - --add-opens
+      - java.base/java.lang=ALL-UNNAMED
+      - --add-opens
+      - java.base/java.util=ALL-UNNAMED
+      - -jar
+      - /app/snowstorm.jar
+      - --elasticsearch.urls=http://elasticsearch:9200
+      - --elasticsearch.index.prefix=hailstorm.
+      - --snowstorm.rest-api.readonly=false
+      - --snowstorm.rest-api.allowedOrigins=*
+    ports:
+      - "8080:8080"
+    networks:
+      - hailstorm
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  # ---------------------------------------------------------------------------
+  # SNOMED CT Browser (optional UI)
+  # ---------------------------------------------------------------------------
+  browser:
+    image: snomedinternational/snomedct-browser:latest
+    container_name: hailstorm-browser
+    restart: unless-stopped
+    depends_on:
+      snowstorm:
+        condition: service_healthy
+    environment:
+      - API_HOST=http://snowstorm:8080/
+    ports:
+      - "80:80"
+    networks:
+      - hailstorm
+
+volumes:
+  elasticsearch-data:
+    driver: local
+
+networks:
+  hailstorm:
+    driver: bridge
