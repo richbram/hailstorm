@@ -38,7 +38,15 @@ export SNOWSTORM_URL="https://hailstorm-dev-uc.a.run.app"
 Snowstorm is natively built for SNOMED CT. You do not use the HAPI CLI for this; instead, use Snowstorm's native `/imports` API.
 
 ### 2.1 Download
-Download the SNOMED CT US Edition RF2 Snapshot using your UTS API key:
+You can automate the download of all UMLS terminologies (including SNOMED CT, RxNorm, and the UMLS Metathesaurus) using the provided script:
+
+```bash
+export UTS_API_KEY="your-uts-api-key"
+bash scripts/download-umls.sh ./data/umls
+```
+This script queries the UTS Release API for the latest versions and downloads them with resume and retry logic.
+
+Alternatively, to download manually:
 ```bash
 export API_KEY="your-uts-api-key"
 curl "https://uts-ws.nlm.nih.gov/download?url=https://download.nlm.nih.gov/mlb/utsauth/USExt/SnomedCT_USEditionRF2_PRODUCTION_20250901T120000Z.zip&apiKey=${API_KEY}" -o SnomedCT_US_Edition.zip
@@ -109,11 +117,13 @@ Upload the tabular ZIP file using the HAPI CLI:
 Unlike LOINC and ICD-10, Snowstorm **does not natively parse RxNorm RRF files**. RxNorm must be transformed into Snowstorm's **Custom Code System format** before loading [3].
 
 ### 5.1 Download
-Download the RxNorm Full Monthly Release via the UTS API:
+If you ran the `download-umls.sh` script in Step 2.1, the latest RxNorm release is already downloaded to your `./data/umls` directory. 
+
+Otherwise, download it manually via the UTS API:
 ```bash
 curl "https://uts-ws.nlm.nih.gov/download?url=https://download.nlm.nih.gov/umls/kss/rxnorm/RxNorm_full_current.zip&apiKey=${API_KEY}" -o RxNorm_full.zip
-unzip RxNorm_full.zip
 ```
+Unzip the file to access the `rrf/` directory.
 
 ### 5.2 Transform to Custom Format
 Snowstorm requires a ZIP file containing four specific files [4]:
